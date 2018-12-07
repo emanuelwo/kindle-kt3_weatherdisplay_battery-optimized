@@ -17,8 +17,15 @@
 NAME=weatherscript
 SCRIPTDIR="/mnt/us/scripts"
 LOG="${SCRIPTDIR}/${NAME}.log"
-SUSPENDFOR=900                          # Default, flexibel by F5INTWORKDAY and F5INTWEEKEND
+
+# set SUSPENDFOROVERRIDE for a fixed suspend. uncomment to use flexible F5INTWORKDAY / F5INTWEEKEND
+SUSPENDFOROVERRIDE=9
+
 NET="wlan0"
+
+# rtc wakeup depends on kindle version
+#WAKEUPMODE=0 # use /sys/class/rtc/rtc0/wakealarm
+WAKEUPMODE=1 # use /sys/devices/platform/mxc_rtc.0/wakeup_enable (e.g. on K4 Kindle B0023)
 
 LIMG="${SCRIPTDIR}/weatherdata.png"
 LIMGBATT="${SCRIPTDIR}/weatherbattery.png"
@@ -43,7 +50,7 @@ F5INTWEEKEND="\
 05,09,10,11,12,13,14,20,21|1800
 22,23,00,01,02,03,04|3600"                   # Refreshintervall for weekends = 57 Refreshes per weekend day
 
-SMSACTIV=1
+SMSACTIV=0
 PLAYSMSUSER="admin"
 PLAYSMSPW="00998877665544332211ffeeddccbbaa"
 PLAYSMSURL="http://192.168.1.10/playsms/index.php"
@@ -70,7 +77,7 @@ kill_kindle() {
 }
 
 customize_kindle() {
-  mkdir /mnt/us/update.bin.tmp.partial 			  # no auto update from kindle firmware
+  mkdir -p /mnt/us/update.bin.tmp.partial 			  # no auto update from kindle firmware
   touch /mnt/us/WIFI_NO_NET_PROBE				  # no wlan test for internet
 }
 
@@ -93,6 +100,10 @@ send_sms () {
 map_ip_hostname () {
 	IP=`ifconfig ${NET} | grep "inet addr" | cut -d':' -f2 | awk '{print $1}'`
 	#HOSTNAME=`nslookup ${IP} | grep Address | grep ${IP} | awk '{print $4}' | awk -F. '{print $1}'`
+        if [ -Z ${IP} ]; then
+          echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Konnte keine IP extrahieren. wlan0 down?" >> ${LOG} 2>&1
+          IP="0.0.0.0"
+        fi
 	if [ ${IP} == "192.168.1.70" ]; then
 	  HOSTNAME="kindle-kt3-schwarz"
 	elif [ ${IP} == "192.168.1.71" ]; then
@@ -130,22 +141,22 @@ while true; do
   echo "================================================" >> ${LOG} 2>&1
 
   ### Enable CPU Powersave
-  CHECKCPUMODE=`cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor | grep -i "powersave"`
+  CHECKCPUMODE=`cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor | grep -i "powersave" | wc -l`
   if [ ${CHECKCPUMODE} -eq 0 ]; then
-    echo powersave > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+    echo "powersave" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
     echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | CPU runtergetaktet." >> ${LOG} 2>&1
   fi
 
   ### Disable Screensaver, no energysaving by powerd
   # powerd buggy since 5.4.5 - https://www.mobileread.com/forums/showthread.php?t=235821
-  CHECKSAVER=`lipc-get-prop com.lab126.powerd status | grep -i "prevent_screen_saver:0"`
+  CHECKSAVER=`lipc-get-prop com.lab126.powerd status | grep -i "prevent_screen_saver:0" | wc -l`
   if [ ${CHECKSAVER} -eq 0 ]; then
     lipc-set-prop com.lab126.powerd preventScreenSaver 1 >> ${LOG} 2>&1
     echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Standard Energiesparmodus deaktiviert." >> ${LOG} 2>&1
   fi
 
   ### Check Batterystate
-  CHECKBATTERY=`gasgauge-info -s`
+  CHECKBATTERY=`gasgauge-info -s | tr -d '%'"`
   echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Batteriezustand: ${CHECKBATTERY}%" >> ${LOG} 2>&1
   if [ ${CHECKBATTERY} -gt 80 ]; then
     NOTIFYBATTERY=0
@@ -154,41 +165,50 @@ while true; do
     echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Batteriezustand 1%, statisches Batteriezustandsbild gesetzt, WLAN deaktivert, Ruhezustand!" >> ${LOG} 2>&1
     eips -f -g "${LIMGBATT}"
     lipc-set-prop com.lab126.wifid enable 0
-    echo 0 > /sys/class/rtc/rtc0/wakealarm
+    if [ $WAKEUPMODE == 0 ]; then
+      echo 0 > /sys/class/rtc/rtc0/wakealarm
+    else
+      echo 0 > /sys/devices/platform/mxc_rtc.0/wakeup_enable
+    fi
+
     echo "mem" > /sys/power/state
   fi
 
   ### Set SUSPENDFOR
   # no regex in if with /bin/sh
-  DAYOFWEEK=`date +%u`  # 1=Monday
-  HOURNOW=`date +%H`    # Hour
-  # Workdays
-  if [ ${DAYOFWEEK} -ge 1 ] && [ ${DAYOFWEEK} -le 5 ]; then
-    for LINE in ${F5INTWORKDAY}; do
-      HOURS=`echo ${LINE} | awk -F\| '{print $1}'`
-      echo "${HOURS}" | grep ${HOURNOW} > /dev/null 2>&1
-      if [ $? -eq 0 ]; then
-        SUSPENDFOR=`echo ${LINE} | awk -F\| '{print $2}'`
-        echo "${SUSPENDFOR}"
-        echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Aufwachintervall für den nächsten Ruhezustand auf ${SUSPENDFOR} gesetzt." >> ${LOG} 2>&1
-      fi
-    done
-  fi
-  # Weekend
-  if [ ${DAYOFWEEK} -ge 6 ] && [ ${DAYOFWEEK} -le 7 ]; then
-    for LINE in ${F5INTWEEKEND}; do
-      HOURS=`echo ${LINE} | awk -F\| '{print $1}'`
-      echo "${HOURS}" | grep ${HOURNOW} > /dev/null 2>&1
-      if [ $? -eq 0 ]; then
-        SUSPENDFOR=`echo ${LINE} | awk -F\| '{print $2}'`
-        echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Aufwachintervall für den nächsten Ruhezustand auf ${SUSPENDFOR} gesetzt." >> ${LOG} 2>&1
-      fi
-    done
+  if [ -z ${SUSPENDFOROVERRIDE} ]; then
+    DAYOFWEEK=`date +%u`  # 1=Monday
+    HOURNOW=`date +%H`    # Hour
+    # Workdays
+    if [ ${DAYOFWEEK} -ge 1 ] && [ ${DAYOFWEEK} -le 5 ]; then
+      for LINE in ${F5INTWORKDAY}; do
+        HOURS=`echo ${LINE} | awk -F\| '{print $1}'`
+        echo "${HOURS}" | grep ${HOURNOW} > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+          SUSPENDFOR=`echo ${LINE} | awk -F\| '{print $2}'`
+          echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Aufwachintervall für den nächsten Ruhezustand auf ${SUSPENDFOR} gesetzt." >> ${LOG} 2>&1
+        fi
+      done
+    fi
+    # Weekend
+    if [ ${DAYOFWEEK} -ge 6 ] && [ ${DAYOFWEEK} -le 7 ]; then
+      for LINE in ${F5INTWEEKEND}; do
+        HOURS=`echo ${LINE} | awk -F\| '{print $1}'`
+        echo "${HOURS}" | grep ${HOURNOW} > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+          SUSPENDFOR=`echo ${LINE} | awk -F\| '{print $2}'`
+          echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Aufwachintervall für den nächsten Ruhezustand auf ${SUSPENDFOR} gesetzt." >> ${LOG} 2>&1
+        fi
+      done
+    fi
+  else
+    SUSPENDFOR=${SUSPENDFOROVERRIDE}
+    echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Aufwachintervall für den nächsten Ruhezustand auf ${SUSPENDFOR} gesetzt." >> ${LOG} 2>&1
   fi
 
   ### Calculation WAKEUPTIMER
   WAKEUPTIMER=$(( `date +%s` + ${SUSPENDFOR} ))
-  echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Aufwachzeitpunkt für den nächsten Ruhezustand `date -d @${WAKEUPTIMER} '+%Y-%m-%d_%H:%M:%S'`." >> ${LOG} 2>&1
+  echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Aufwachzeitpunkt für den nächsten Ruhezustand `date -D %s -d ${WAKEUPTIMER} '+%Y-%m-%d_%H:%M:%S'`." >> ${LOG} 2>&1
 
   ### Enable WLAN
   #lipc-set-prop com.lab126.cmd wirelessEnable 1 >> ${LOG} 2>&1
@@ -293,6 +313,9 @@ while true; do
     fi
 
   fi
+  
+  # sleep some time to allow all screen painting to finish
+  sleep 1
 
   ### Disable WLAN
   # No stable "wakealarm" with enabled WLAN
@@ -301,8 +324,13 @@ while true; do
   echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | WLAN deaktivieren." >> ${LOG} 2>&1
 
   ### Set wakealarm
-  echo 0 > /sys/class/rtc/rtc0/wakealarm
-  echo ${WAKEUPTIMER} > /sys/class/rtc/rtc0/wakealarm
+  if [ $WAKEUPMODE == 0 ]; then 
+    echo 0 > /sys/class/rtc/rtc0/wakealarm
+    echo ${WAKEUPTIMER} > /sys/class/rtc/rtc0/wakealarm
+  else
+    echo 0 > /sys/devices/platform/mxc_rtc.0/wakeup_enable
+    echo ${SUSPENDFOR} > /sys/devices/platform/mxc_rtc.0/wakeup_enable
+  fi
 
   ### Go into Suspend to Memory (STR)
   echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Ruhezustand starten." >> ${LOG} 2>&1
