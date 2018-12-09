@@ -146,7 +146,8 @@ while tries < max_tries:
 
 
 		# Now
-		weatherdata_now_text = parsed_apidata['currently']['summary'][:20] + (parsed_apidata['currently']['summary'][20:] and '...')
+		weatherdata_now_text = parsed_apidata['currently']['summary']#[:26] # + (parsed_apidata['currently']['summary'][20:] and '...')
+		weatherdata_now_text = weatherdata_now_text[:35]
 		weatherdata_now_icon = parsed_apidata['currently']['icon']
 		logging.info("- weatherdata_now | summary: %s" % (weatherdata_now_text))
 		logging.info("- weatherdata_now | icon: %s" % (weatherdata_now_icon))
@@ -226,7 +227,8 @@ else:
 	logging.error("FAIL |  dark sky api quest failed")
 
 
-sensor = "T Hundehuette"
+sensor_t = "T Hundehuette"
+sensor_h = "H Hundehuette"
 
 host='localhost'
 port=8086
@@ -239,18 +241,32 @@ ts = today.strftime("%Y-%m-%dT00:00:00Z")
 #ts = "2018-12-01T00:00:00Z"
 
 # fetch min, max & now
-query = 'SELECT min(value), max(value), last(value) FROM "'+sensor+'" WHERE time > \''+ts+'\' GROUP BY * ORDER BY ASC LIMIT 3'
+query = 'SELECT min(value), max(value), last(value) FROM "'+sensor_t+'" WHERE time > \''+ts+'\' GROUP BY * ORDER BY ASC LIMIT 3'
 result = client.query(query)
 print(result)
 gtt="0"
 gth="0"
 gtl="0"
-for measurement in result.get_points(measurement=sensor):
+for measurement in result.get_points(measurement=sensor_t):
      gtt = '%.1f' % float(measurement['last'])
      gth = '%.1f' % float(measurement['max'])
      gtl = '%.1f' % float(measurement['min'])
 
 print("> influxdb: got T: " + gtt + " max:"+gth+" min:"+gtl)
+
+gah = "0"
+ghh = "0"
+ghl = "0"
+query = 'SELECT min(value), max(value), last(value) FROM "'+sensor_h+'" WHERE time > \''+ts+'\' GROUP BY * ORDER BY ASC LIMIT 3'
+result = client.query(query)
+print(result)
+for measurement in result.get_points(measurement=sensor_h):
+    gah = '%.0f' % float(measurement['last'])
+    ghh = '%.0f' % float(measurement['max'])
+    ghl = '%.0f' % float(measurement['min'])
+    
+print("> influxdb: got H: " + gah + " max:"+ghh+" min:"+ghl)
+
 
 ################
 # Homematic CCU2
@@ -403,9 +419,6 @@ whl = "0"
 bah = "0"
 bhh = "0"
 bhl = "0"
-gah = "0"
-ghh = "0"
-ghl = "0"
 grr = "0"
 gwd = "N"
 gws = "0"
