@@ -33,9 +33,9 @@ LIMGERR="${SCRIPTDIR}/weathererror_image.png"
 LIMGERRWLAN="${SCRIPTDIR}/weathererror_wlan.png"
 LIMGERRNET="${SCRIPTDIR}/weathererror_network.png"
 
-RSRV="192.168.1.10"
-RIMG="${RSRV}/kindle-weather/weatherdata.png"
-RSH="${RSRV}/kindle-weather/${NAME}.sh"
+RSRV="home"
+RIMG="${RSRV}:8080/static/kindle/weatherdata_bad.png"
+RSH="${RSRV}:8080/static/kindle/${NAME}.sh"
 RPATH="/var/www/html/kindle-weather"
 
 ROUTERIP="192.168.1.1"                  # Workaround, forget default gateway after STR
@@ -104,10 +104,8 @@ map_ip_hostname () {
           echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Konnte keine IP extrahieren. wlan0 down?" >> ${LOG} 2>&1
           IP="0.0.0.0"
         fi
-	if [ ${IP} == "192.168.1.70" ]; then
-	  HOSTNAME="kindle-kt3-schwarz"
-	elif [ ${IP} == "192.168.1.71" ]; then
-	  HOSTNAME="kindle-kt3-weiss"
+	if [ ${IP} == "192.168.178.50" ]; then
+	  HOSTNAME="kindle1"
 	else
 	  HOSTNAME="failed_map_ip_hostname"
 	  echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Mappging der IP zum HOSTNAME fehlgeschlagen." >> ${LOG} 2>&1
@@ -259,7 +257,7 @@ while true; do
 
     ### Check new Script
     # wget (-N) can't https
-    RSTATUSSH=`curl --silent --head "http://${RSH}" | head -n 1 | cut -d$' ' -f2`
+    RSTATUSSH=`curl --silent --head "http://${RSH}" | head -n 1 | cut -d' ' -f2`
     if [ ${RSTATUSSH} -eq 200 ]; then
       LMTIMESH=`stat -c %Y "${SCRIPTDIR}/${NAME}.sh"`
       curl --silent --time-cond "${SCRIPTDIR}/${NAME}.sh" --output "${SCRIPTDIR}/${NAME}.sh" "http://${RSH}"
@@ -276,15 +274,13 @@ while true; do
 
     ### Get new Weatherdata
     # wget can't https
-    if [ "${HOSTNAME}" = "kindle-kt3-schwarz" ]; then
-      RIMG="${RSRV}/kindle-weather/weatherdata-bad.png"
-    fi
-    if [ "${HOSTNAME}" = "kindle-kt3-weiss" ]; then
-      RIMG="${RSRV}/kindle-weather/weatherdata-wohnzimmer.png"
-    fi
+    #if [ "${HOSTNAME}" = "kindle1" ]; then
+      #RIMG="${RSRV}/kindle-weather/weatherdata-bad.png"
+    #fi
 
     let REFRESHCOUNTER=REFRESHCOUNTER+1
-    RSTATUSIMG=`curl --silent --head "http://${RIMG}" | head -n 1 | cut -d$' ' -f2`
+    RSTATUSIMG=`curl --silent --head "http://${RIMG}" | head -n 1 | cut -d' ' -f2`
+    echo "curl ${RSTATUSIMG}"
     if [ ${RSTATUSIMG} -eq 200 ]; then
       curl --silent --output "$LIMG" "http://${RIMG}"
       if [ ${REFRESHCOUNTER} -ne 5 ]; then
@@ -304,13 +300,13 @@ while true; do
     fi
 
     ### Copy log by ssh
-    cat ${LOG} | ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i /mnt/us/scripts/id_rsa_kindle -l kindle ${RSRV} "cat >> ${RPATH}/${NAME}_${HOSTNAME}.log" > /dev/null 2>&1
-    if [ $? -eq 0 ]; then
-      rm ${LOG}
-      echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Log per SSH an Remote-Server übergeben und lokal gelöscht." >> ${LOG} 2>&1
-    else
-      echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Log konnte nicht an den Remote-Server übergeben werden." >> ${LOG} 2>&1
-    fi
+    #cat ${LOG} | ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i /mnt/us/scripts/id_rsa_kindle -l kindle ${RSRV} "cat >> ${RPATH}/${NAME}_${HOSTNAME}.log" > /dev/null 2>&1
+    #if [ $? -eq 0 ]; then
+    #  rm ${LOG}
+    #  echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Log per SSH an Remote-Server übergeben und lokal gelöscht." >> ${LOG} 2>&1
+    #else
+    #  echo "`date '+%Y-%m-%d_%H:%M:%S'` | ${HOSTNAME} | Log konnte nicht an den Remote-Server übergeben werden." >> ${LOG} 2>&1
+    #fi
 
   fi
   

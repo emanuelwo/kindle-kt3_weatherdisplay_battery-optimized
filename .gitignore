@@ -5,3 +5,6 @@ _SVGs
 _climacons-master
 _112082-weather-linear
 cron_kindle-wetter_preprocess_defs.txt
+darksky_apikey.py
+influxdb_config.py
+

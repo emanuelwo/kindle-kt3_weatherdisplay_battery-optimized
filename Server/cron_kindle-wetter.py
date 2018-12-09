@@ -18,7 +18,12 @@ import codecs
 import urllib.request
 import json
 import untangle
-import MySQLdb
+#import MySQLdb
+
+
+from datetime import date
+import argparse
+from influxdb import InfluxDBClient
 
 
 ######################
@@ -29,14 +34,15 @@ locale.setlocale(locale.LC_TIME, "de_DE.UTF-8")
 ###########
 # Variablen
 WEATHER_URL = "https://api.darksky.net/forecast"
-WEATHER_KEY = "aabbccddeeff11223344556677889900"
-CITY = "Münchberg, Bayern, DE"
-LATITUDE = "50.192900"
-LONGTITUDE = "11.8035702"
+from darksky_apikey import *
 
-PATH = "/root/Scripts"
-LOG = "log/cron_kindle-wetter.log"
-OUTPUT = "/var/www/html/kindle-weather/weatherdata.png"
+CITY = "Bielefeld, NRW, DE"
+LATITUDE = "52.048707"
+LONGTITUDE = "8.513520"
+
+PATH = "/opt/k4_weatherdisplay/Server"
+LOG = "/var/log/cron_kindle-wetter.log"
+HTML_DIR = "/etc/openhab2/html/kindle"
 SVG_FILE = "%s/cron_kindle-wetter_preprocess.svg" % PATH
 SVG_OUTPUT = "%s/cron_kindle-wetter_output.svg" % PATH
 TMP_OUTPUT = "%s/cron_kindle-wetter_tmp.png" % PATH
@@ -52,11 +58,12 @@ SQLPW = "weatherdata"
 SQLDB = "weatherdata"
 SQLTAB = "homematic"
 
+from influxdb_config import *
 
 #################
 # Protokollierung
 logging.basicConfig(
-	 filename=PATH + '/' + LOG,
+	 filename=LOG,
 	 level=logging.INFO,
 	 #level=logging.WARNING,
 	 format= '[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s',
@@ -219,145 +226,190 @@ else:
 	logging.error("FAIL |  dark sky api quest failed")
 
 
+sensor = "T Hundehuette"
+
+host='localhost'
+port=8086
+client = InfluxDBClient(host, port, influxdb_user, influxdb_password, influxdb_dbname)
+
+today    = date.today()
+ts = today.strftime("%Y-%m-%dT00:00:00Z")
+
+#test
+#ts = "2018-12-01T00:00:00Z"
+
+# fetch min, max & now
+query = 'SELECT min(value), max(value), last(value) FROM "'+sensor+'" WHERE time > \''+ts+'\' GROUP BY * ORDER BY ASC LIMIT 3'
+result = client.query(query)
+print(result)
+gtt="0"
+gth="0"
+gtl="0"
+for measurement in result.get_points(measurement=sensor):
+     gtt = '%.1f' % float(measurement['last'])
+     gth = '%.1f' % float(measurement['max'])
+     gtl = '%.1f' % float(measurement['min'])
+
+print("> influxdb: got T: " + gtt + " max:"+gth+" min:"+gtl)
+
 ################
 # Homematic CCU2
 # http://192.168.1.66/addons/xmlapi/state.cgi?device_id=2390,2465
-db = MySQLdb.connect(
-	SQLHOST,
-	SQLUSER,
-	SQLPW,
-	SQLDB)
-cursor = db.cursor()
+#db = MySQLdb.connect(
+#	SQLHOST,
+#	SQLUSER,
+#	SQLPW,
+#	SQLDB)
+#cursor = db.cursor()
+#
+#for DEVICE in DEVICES:
+#
+#	xmldoc = untangle.parse(
+#		"http://%s/addons/xmlapi/state.cgi?device_id=%s" %
+#		(HOMEMATICIP, DEVICE))
+#
+#	for ITEMS in xmldoc.state.device.channel:
+#		if ITEMS.get_elements('datapoint'):
+#			for DATA in ITEMS.datapoint:
+#				datapointname = DATA['name']
+#
+#				### Temperatur
+#				if datapointname.endswith('.ACTUAL_TEMPERATURE'):
+#					datapointid = DATA['ise_id']
+#					datapoint = DATA['name']
+#					value = DATA['value']
+#
+#					sqlinsert(cursor, DEVICE, datapoint, datapointid, value)
+#
+#					# WZ
+#					if DEVICE == 2390:
+#						wzt = '%.1f' % float(value)
+#						wth = sqlminmax(cursor, datapointid, "DESC", 1)
+#						wtl = sqlminmax(cursor, datapointid, "ASC", 1)
+#
+#					# Bad
+#					if DEVICE == 2465:
+#						bat = '%.1f' % float(value)
+#						bth = sqlminmax(cursor, datapointid, "DESC", 1)
+#						btl = sqlminmax(cursor, datapointid, "ASC", 1)
+#
+#					# Garten
+#					if DEVICE == 7404:
+#						gtt = '%.1f' % float(value)
+#						gth = sqlminmax(cursor, datapointid, "DESC", 1)
+#						gtl = sqlminmax(cursor, datapointid, "ASC", 1)
+#
+#				### Luftfeuchtigkeit
+#				if datapointname.endswith('.HUMIDITY'):
+#					datapointid = DATA['ise_id']
+#					datapoint = DATA['name']
+#					value = DATA['value']
+#
+#					sqlinsert(cursor, DEVICE, datapoint, datapointid, value)
+#
+#					# WZ
+#					if DEVICE == 2390:
+#						wzh = '%.0f' % float(value)
+#						whh = sqlminmax(cursor, datapointid, "DESC", 0)
+#						whl = sqlminmax(cursor, datapointid, "ASC", 0)
+#
+#					# Bad
+#					if DEVICE == 2465:
+#						bah = '%.0f' % float(value)
+#						bhh = sqlminmax(cursor, datapointid, "DESC", 0)
+#						bhl = sqlminmax(cursor, datapointid, "ASC", 0)
+#
+#					# Garten
+#					if DEVICE == 7404:
+#						gah = '%.0f' % float(value)
+#						ghh = sqlminmax(cursor, datapointid, "DESC", 0)
+#						ghl = sqlminmax(cursor, datapointid, "ASC", 0)
+#
+#				### Niederschlagsmenge
+#				# Ohne "Reset" wird die Niederschlagsmenge immer zum letzten Wert addiert - wächst immer weiter an, wird nicht auf 0 gesetzt.
+#				if datapointname.endswith('.RAIN_COUNTER'):
+#					datapointid = DATA['ise_id']
+#					datapoint = DATA['name']
+#					value = DATA['value']
+#
+#					sqlinsert(cursor, DEVICE, datapoint, datapointid, value)
+#
+#					# Garten
+#					if DEVICE == 7404:
+#						cursor.execute(
+#							"SELECT maxi-mini FROM (SELECT MIN(value) mini, MAX(value) maxi FROM (SELECT value FROM %s WHERE datapointid = %s AND timestamp >= NOW() - INTERVAL 1 DAY ) mm1) mm2" %
+#								(SQLTAB, datapointid))
+#						for select in cursor.fetchall():
+#			                           grr = '%.1f' % float(select[0])
+#
+#				### Windrichtung
+#				if datapointname.endswith('.WIND_DIR'):
+#					datapointid = DATA['ise_id']
+#					datapoint = DATA['name']
+#					value = DATA['value']
+#
+#					sqlinsert(cursor, DEVICE, datapoint, datapointid, value)
+#
+#					# Garten
+#					if DEVICE == 7404:
+#						gwdtemp = '%.1f' % float(value)
+#
+#						if 0 <= float(gwdtemp) <= 22.4:
+#							gwd = "N"
+#						elif 22.5 <= float(gwdtemp) <= 67.4:
+#							gwd = "NO"
+#						elif 67.5 <= float(gwdtemp) <= 112.4:
+#							gwd = "O"
+#						elif 112.5 <= float(gwdtemp) <= 157.4:
+#							gwd = "SO"
+#						elif 157.5 <= float(gwdtemp) <= 202.4:
+#							gwd = "S"
+#						elif 202.5 <= float(gwdtemp) <= 247.4:
+#							gwd = "SW"
+#						elif 247.5 <= float(gwdtemp) <= 292.4:
+#							gwd = "W"
+#						elif 292.5 <= float(gwdtemp) <= 337.4:
+#							gwd = "NW"
+#						elif 337.5 <= float(gwdtemp) <= 360:
+#							gwd = "N"
+#
+#				### Windgeschwindigkeit
+#				if datapointname.endswith('.WIND_SPEED'):
+#					datapointid = DATA['ise_id']
+#					datapoint = DATA['name']
+#					value = DATA['value']
+#
+#					sqlinsert(cursor, DEVICE, datapoint, datapointid, value)
+#
+#					# Garten
+#					if DEVICE == 7404:
+#						gws = '%.1f' % float(value)
+#
+#						cursor.execute(
+#							"SELECT value FROM %s WHERE datapointid = %s AND DATE(timestamp) = DATE(NOW()) ORDER BY value + 0 DESC LIMIT 1" %
+#							(SQLTAB, datapointid))
+#						for select in cursor.fetchall():
+#							gwh = '%.0f' % float(select[0])
 
-for DEVICE in DEVICES:
-
-	xmldoc = untangle.parse(
-		"http://%s/addons/xmlapi/state.cgi?device_id=%s" %
-		(HOMEMATICIP, DEVICE))
-
-	for ITEMS in xmldoc.state.device.channel:
-		if ITEMS.get_elements('datapoint'):
-			for DATA in ITEMS.datapoint:
-				datapointname = DATA['name']
-
-				### Temperatur
-				if datapointname.endswith('.ACTUAL_TEMPERATURE'):
-					datapointid = DATA['ise_id']
-					datapoint = DATA['name']
-					value = DATA['value']
-
-					sqlinsert(cursor, DEVICE, datapoint, datapointid, value)
-
-					# WZ
-					if DEVICE == 2390:
-						wzt = '%.1f' % float(value)
-						wth = sqlminmax(cursor, datapointid, "DESC", 1)
-						wtl = sqlminmax(cursor, datapointid, "ASC", 1)
-
-					# Bad
-					if DEVICE == 2465:
-						bat = '%.1f' % float(value)
-						bth = sqlminmax(cursor, datapointid, "DESC", 1)
-						btl = sqlminmax(cursor, datapointid, "ASC", 1)
-
-					# Garten
-					if DEVICE == 7404:
-						gtt = '%.1f' % float(value)
-						gth = sqlminmax(cursor, datapointid, "DESC", 1)
-						gtl = sqlminmax(cursor, datapointid, "ASC", 1)
-
-				### Luftfeuchtigkeit
-				if datapointname.endswith('.HUMIDITY'):
-					datapointid = DATA['ise_id']
-					datapoint = DATA['name']
-					value = DATA['value']
-
-					sqlinsert(cursor, DEVICE, datapoint, datapointid, value)
-
-					# WZ
-					if DEVICE == 2390:
-						wzh = '%.0f' % float(value)
-						whh = sqlminmax(cursor, datapointid, "DESC", 0)
-						whl = sqlminmax(cursor, datapointid, "ASC", 0)
-
-					# Bad
-					if DEVICE == 2465:
-						bah = '%.0f' % float(value)
-						bhh = sqlminmax(cursor, datapointid, "DESC", 0)
-						bhl = sqlminmax(cursor, datapointid, "ASC", 0)
-
-					# Garten
-					if DEVICE == 7404:
-						gah = '%.0f' % float(value)
-						ghh = sqlminmax(cursor, datapointid, "DESC", 0)
-						ghl = sqlminmax(cursor, datapointid, "ASC", 0)
-
-				### Niederschlagsmenge
-				# Ohne "Reset" wird die Niederschlagsmenge immer zum letzten Wert addiert - wächst immer weiter an, wird nicht auf 0 gesetzt.
-				if datapointname.endswith('.RAIN_COUNTER'):
-					datapointid = DATA['ise_id']
-					datapoint = DATA['name']
-					value = DATA['value']
-
-					sqlinsert(cursor, DEVICE, datapoint, datapointid, value)
-
-					# Garten
-					if DEVICE == 7404:
-						cursor.execute(
-							"SELECT maxi-mini FROM (SELECT MIN(value) mini, MAX(value) maxi FROM (SELECT value FROM %s WHERE datapointid = %s AND timestamp >= NOW() - INTERVAL 1 DAY ) mm1) mm2" %
-								(SQLTAB, datapointid))
-						for select in cursor.fetchall():
-							grr = '%.1f' % float(select[0])
-
-				### Windrichtung
-				if datapointname.endswith('.WIND_DIR'):
-					datapointid = DATA['ise_id']
-					datapoint = DATA['name']
-					value = DATA['value']
-
-					sqlinsert(cursor, DEVICE, datapoint, datapointid, value)
-
-					# Garten
-					if DEVICE == 7404:
-						gwdtemp = '%.1f' % float(value)
-
-						if 0 <= float(gwdtemp) <= 22.4:
-							gwd = "N"
-						elif 22.5 <= float(gwdtemp) <= 67.4:
-							gwd = "NO"
-						elif 67.5 <= float(gwdtemp) <= 112.4:
-							gwd = "O"
-						elif 112.5 <= float(gwdtemp) <= 157.4:
-							gwd = "SO"
-						elif 157.5 <= float(gwdtemp) <= 202.4:
-							gwd = "S"
-						elif 202.5 <= float(gwdtemp) <= 247.4:
-							gwd = "SW"
-						elif 247.5 <= float(gwdtemp) <= 292.4:
-							gwd = "W"
-						elif 292.5 <= float(gwdtemp) <= 337.4:
-							gwd = "NW"
-						elif 337.5 <= float(gwdtemp) <= 360:
-							gwd = "N"
-
-				### Windgeschwindigkeit
-				if datapointname.endswith('.WIND_SPEED'):
-					datapointid = DATA['ise_id']
-					datapoint = DATA['name']
-					value = DATA['value']
-
-					sqlinsert(cursor, DEVICE, datapoint, datapointid, value)
-
-					# Garten
-					if DEVICE == 7404:
-						gws = '%.1f' % float(value)
-
-						cursor.execute(
-							"SELECT value FROM %s WHERE datapointid = %s AND DATE(timestamp) = DATE(NOW()) ORDER BY value + 0 DESC LIMIT 1" %
-							(SQLTAB, datapointid))
-						for select in cursor.fetchall():
-							gwh = '%.0f' % float(select[0])
-
+wzt = "0"
+wth = "0"
+wtl = "0"
+bat = "0"
+bth = "0"
+btl = "0"
+wzh = "0"
+whh = "0"
+whl = "0"
+bah = "0"
+bhh = "0"
+bhl = "0"
+gah = "0"
+ghh = "0"
+ghl = "0"
+grr = "0"
+gwd = "N"
+gws = "0"
+gwh = "0"
 
 ############################################################
 # SVG einlesen, Output zusammensuchen und SVG/PNG generieren
@@ -365,7 +417,7 @@ for DEVICE in DEVICES:
 
 for ROOM in ROOMS:
 
-	OUTPUT = "/var/www/html/kindle-weather/weatherdata-%s.png" % (ROOM.lower())
+	OUTPUT = HTML_DIR + "/weatherdata_%s.png" % (ROOM.lower())
 	ROOM1 = "Innen (%s)" % (ROOM)
 
 	output = codecs.open(SVG_FILE, "r", encoding="utf-8").read()
