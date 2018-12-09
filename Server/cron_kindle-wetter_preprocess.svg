@@ -27,8 +27,8 @@
      id="namedview5604"
      showgrid="false"
      inkscape:zoom="1.1725"
-     inkscape:cx="478.85215"
-     inkscape:cy="561.12163"
+     inkscape:cx="745.38761"
+     inkscape:cy="288.20052"
      inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="1"
@@ -1842,7 +1842,7 @@
        id="tspan5442">Luftfeuchtigkeit (%)</tspan>
   </text>
   <use
-     transform="matrix(.182 0 0 .182 92 492)" 
+     transform="matrix(.182 0 0 .182 92 492)"
      width="100%"
      height="100%"
      font-family="'DejaVu Sans'"
@@ -2371,4 +2371,5 @@
        text-anchor="end"
        style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal"
        id="tspan5594">$TEXT </tspan></text>
+  <g transform='translate(-10 626)'>$PT</g>
 </svg>

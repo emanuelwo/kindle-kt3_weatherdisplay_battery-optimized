@@ -24,6 +24,14 @@ import untangle
 from datetime import date
 import argparse
 from influxdb import InfluxDBClient
+import json
+import datetime
+from io import StringIO
+import matplotlib as mpl
+mpl.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.dates as md
+import numpy as np
 
 
 ######################
@@ -268,6 +276,50 @@ for measurement in result.get_points(measurement=sensor_h):
 print("> influxdb: got H: " + gah + " max:"+ghh+" min:"+ghl)
 
 
+# fetch min, max & now
+# 500px wide
+graphwidth = 500 #px
+grouptime = int((24*60*60) / graphwidth)
+sensor_t = "T Dachboden"
+query = 'SELECT first(value) as "value"  FROM "'+sensor_t+'" WHERE time > now()-1d GROUP BY time('+str(grouptime)+'s) fill(previous)'
+
+print("Querying data: " + query)
+result = client.query(query, epoch="s")
+#print(result)
+
+
+tdata = []
+vdata = []
+for measurement in result.get_points(measurement=sensor_t):
+        vdata.append(measurement['value'])
+        date = datetime.datetime.fromtimestamp(measurement['time'])
+        tdata.append(date)
+
+fig, ax = plt.subplots()
+fig.set_size_inches(6.8,1.7)
+
+
+hours = md.HourLocator(interval = 1)  #
+h_fmt = md.DateFormatter('%H')
+
+ax.xaxis.set_major_locator(hours)
+ax.xaxis.set_major_formatter(h_fmt)
+fig.autofmt_xdate()
+
+ax.plot(tdata, vdata)
+
+ax.grid()
+#fig.savefig("test.svg")
+
+figfile = StringIO()
+plt.tight_layout()
+plt.savefig(figfile, format='svg')
+plt.savefig("test.svg")
+
+figdata_svg = figfile.getvalue()
+# remove xml def header
+figdata_svg = "\n".join(figdata_svg.split('\n')[3:])
+
 ################
 # Homematic CCU2
 # http://192.168.1.66/addons/xmlapi/state.cgi?device_id=2390,2465
@@ -459,6 +511,8 @@ for ROOM in ROOMS:
 	output = output.replace("$TIME", datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
 	output = output.replace("$LOC", str(CITY))
 
+	output = output.replace("$PT", figdata_svg)
+
 	for i in range(0, 3):
 		output = replace_daily(output, str(i+1), weatherdata_forecast_weekday[i], weatherdata_forecast_icon[i], weatherdata_forecast_templow[i], weatherdata_forecast_temphigh[i], weatherdata_forecast_wind[i], weatherdata_forecast_rain[i], weatherdata_forecast_rainint[i])
 
@@ -495,6 +549,6 @@ for ROOM in ROOMS:
 	_exec("rsvg-convert --background-color=white -o %s %s" % (TMP_OUTPUT, SVG_OUTPUT))
 	_exec("pngcrush -c 0 -ow %s 1>/dev/null 2>&1" % TMP_OUTPUT)
 	_exec("mv -f '%s' '%s'" % (TMP_OUTPUT, OUTPUT))
-	_exec("rm -f '%s'" % SVG_OUTPUT)
+	#_exec("rm -f '%s'" % SVG_OUTPUT)
 
 logging.info("SCRIPT END\n")
